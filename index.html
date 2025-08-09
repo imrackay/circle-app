@@ -2,27 +2,48 @@
 <html lang="th">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <title>Circle Score Realtime</title>
   <style>
-    body { background: #0b0f14; color: #fff; font-family: sans-serif; margin: 0; padding: 0; text-align: center; }
-    canvas { background: #111; display: block; margin: 20px auto; border-radius: 8px; }
-    .score { font-size: 2em; margin-top: 10px; color: #0f0; }
-    .best { font-size: 1.2em; color: #ccc; }
+    body {
+      background: #0b0f14;
+      color: #fff;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      text-align: center;
+    }
+    canvas {
+      background: #111;
+      display: block;
+      margin: 20px auto;
+      border-radius: 8px;
+      width: 90vw;
+      height: auto;
+      max-width: 400px;
+    }
+    .score {
+      font-size: 2em;
+      margin-top: 10px;
+      color: #0f0;
+    }
+    .best {
+      font-size: 1.2em;
+      color: #ccc;
+    }
   </style>
 </head>
 <body>
   <h1>Draw a Circle</h1>
-  <canvas id="pad" width="400" height="400"></canvas>
+  <canvas id="pad"></canvas>
   <div class="score">Score: <span id="scoreNum">0.0</span>%</div>
   <div class="best">Best: <span id="best">0.0</span>%</div>
 
 <script>
 (() => {
-  let raf = null; // moved to top to avoid TDZ errors
+  let raf = null;
   const pad = document.getElementById('pad');
   const ctx = pad.getContext('2d');
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
   const scoreEl = document.getElementById('scoreNum');
   const bestEl = document.getElementById('best');
 
@@ -33,9 +54,8 @@
 
   function resizeCanvas(){
     const rect = pad.getBoundingClientRect();
-    pad.width = Math.round(rect.width * dpr);
-    pad.height = Math.round(rect.height * dpr);
-    ctx.scale(dpr, dpr);
+    pad.width = rect.width;
+    pad.height = rect.width; // keep square
     redraw();
     scheduleScore();
   }
@@ -84,12 +104,11 @@
   }
 
   function redraw(){
-    const rect = pad.getBoundingClientRect();
-    ctx.clearRect(0,0,rect.width,rect.height);
+    ctx.clearRect(0,0,pad.width,pad.height);
     ctx.save();
     ctx.strokeStyle = '#132036'; ctx.lineWidth = 1; ctx.globalAlpha = .6;
-    for(let x=0;x<rect.width;x+=40){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,rect.height); ctx.stroke();}
-    for(let y=0;y<rect.height;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(rect.width,y); ctx.stroke();}
+    for(let x=0;x<pad.width;x+=40){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,pad.height); ctx.stroke();}
+    for(let y=0;y<pad.height;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(pad.width,y); ctx.stroke();}
     ctx.restore();
     ctx.lineCap='round';
     ctx.lineJoin='round';
@@ -111,7 +130,7 @@
 
   function scheduleScore(){
     if(raf) return;
-    raf = requestAnimationFrame(()=>{ raf=null; scoreNow(true); });
+    raf = requestAnimationFrame(()=>{ raf=null; scoreNow(); });
   }
 
   function scoreNow(){
