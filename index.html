@@ -31,6 +31,17 @@
       font-size: 1.2em;
       color: #ccc;
     }
+    .toolbar {
+      margin-top: 10px;
+    }
+    .toolbar button, .toolbar input[type=color] {
+      margin: 5px;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1em;
+    }
   </style>
 </head>
 <body>
@@ -38,6 +49,10 @@
   <canvas id="pad"></canvas>
   <div class="score">Score: <span id="scoreNum">0.0</span>%</div>
   <div class="best">Best: <span id="best">0.0</span>%</div>
+  <div class="toolbar">
+    <button id="clearBtn">Clear</button>
+    <label>Pen Color: <input type="color" id="colorPicker" value="#33a1fd"></label>
+  </div>
 
 <script>
 (() => {
@@ -46,6 +61,20 @@
   const ctx = pad.getContext('2d');
   const scoreEl = document.getElementById('scoreNum');
   const bestEl = document.getElementById('best');
+  const clearBtn = document.getElementById('clearBtn');
+  const colorPicker = document.getElementById('colorPicker');
+
+  let penColor = colorPicker.value;
+  colorPicker.addEventListener('input', () => {
+    penColor = colorPicker.value;
+  });
+
+  clearBtn.addEventListener('click', () => {
+    strokes = [];
+    current = [];
+    redraw();
+    setScore(0);
+  });
 
   let strokes = [];
   let current = [];
@@ -112,16 +141,17 @@
     ctx.restore();
     ctx.lineCap='round';
     ctx.lineJoin='round';
-    ctx.lineWidth = 4; ctx.strokeStyle = '#7cc1ff';
-    for(const s of strokes){ drawPath(s); }
-    if(current.length){ ctx.strokeStyle = '#33a1fd'; drawPath(current); }
+    ctx.lineWidth = 4;
+    for(const s of strokes){ drawPath(s, penColor); }
+    if(current.length){ drawPath(current, penColor); }
   }
 
-  function drawPath(pts){
+  function drawPath(pts, color){
     if(!pts.length) return;
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.strokeStyle = color;
     ctx.stroke();
   }
 
