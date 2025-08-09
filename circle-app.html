@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Circle Score Realtime</title>
+  <style>
+    body { background: #0b0f14; color: #fff; font-family: sans-serif; margin: 0; padding: 0; text-align: center; }
+    canvas { background: #111; display: block; margin: 20px auto; border-radius: 8px; }
+    .score { font-size: 2em; margin-top: 10px; color: #0f0; }
+    .best { font-size: 1.2em; color: #ccc; }
+  </style>
+</head>
+<body>
+  <h1>Draw a Circle</h1>
+  <canvas id="pad" width="400" height="400"></canvas>
+  <div class="score">Score: <span id="scoreNum">0.0</span>%</div>
+  <div class="best">Best: <span id="best">0.0</span>%</div>
+
+<script>
+(() => {
+  let raf = null; // moved to top to avoid TDZ errors
+  const pad = document.getElementById('pad');
+  const ctx = pad.getContext('2d');
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const scoreEl = document.getElementById('scoreNum');
+  const bestEl = document.getElementById('best');
+
+  let strokes = [];
+  let current = [];
+  let best = Number(localStorage.getItem('circle_best') || 0);
+  bestEl.textContent = best.toFixed(1);
+
+  function resizeCanvas(){
+    const rect = pad.getBoundingClientRect();
+    pad.width = Math.round(rect.width * dpr);
+    pad.height = Math.round(rect.height * dpr);
+    ctx.scale(dpr, dpr);
+    redraw();
+    scheduleScore();
+  }
+
+  function getPos(e){
+    const rect = pad.getBoundingClientRect();
+    const pt = e.touches? e.touches[0] : e;
+    return {x:(pt.clientX-rect.left), y:(pt.clientY-rect.top)};
+  }
+
+  let drawing=false;
+  pad.addEventListener('mousedown', start);
+  pad.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  pad.addEventListener('touchstart', start, {passive:false});
+  pad.addEventListener('touchmove', move, {passive:false});
+  pad.addEventListener('touchend', end);
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  function start(e){
+    e.preventDefault();
+    current = [];
+    drawing = true;
+    scheduleScore();
+  }
+
+  function move(e){
+    if(!drawing) return;
+    const p = getPos(e);
+    const len = current.length;
+    if(len===0 || dist(current[len-1], p) > 1.8) {
+      current.push(p);
+      redraw();
+      scheduleScore();
+    }
+  }
+
+  function end(){
+    if(!drawing) return;
+    drawing = false;
+    if(current.length>8) strokes.push(current);
+    current = [];
+    redraw();
+    scheduleScore();
+  }
+
+  function redraw(){
+    const rect = pad.getBoundingClientRect();
+    ctx.clearRect(0,0,rect.width,rect.height);
+    ctx.save();
+    ctx.strokeStyle = '#132036'; ctx.lineWidth = 1; ctx.globalAlpha = .6;
+    for(let x=0;x<rect.width;x+=40){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,rect.height); ctx.stroke();}
+    for(let y=0;y<rect.height;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(rect.width,y); ctx.stroke();}
+    ctx.restore();
+    ctx.lineCap='round';
+    ctx.lineJoin='round';
+    ctx.lineWidth = 4; ctx.strokeStyle = '#7cc1ff';
+    for(const s of strokes){ drawPath(s); }
+    if(current.length){ ctx.strokeStyle = '#33a1fd'; drawPath(current); }
+  }
+
+  function drawPath(pts){
+    if(!pts.length) return;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+  }
+
+  function flatten(){ return strokes.flat().concat(current); }
+  function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
+
+  function scheduleScore(){
+    if(raf) return;
+    raf = requestAnimationFrame(()=>{ raf=null; scoreNow(true); });
+  }
+
+  function scoreNow(){
+    const pts = flatten();
+    if(pts.length<20){ setScore(0); return; }
+    const {cx, cy, R} = fitCircle(pts);
+    const radii = pts.map(p => Math.hypot(p.x-cx, p.y-cy));
+    const meanR = radii.reduce((a,b)=>a+b,0)/radii.length;
+    const stdR = Math.sqrt(radii.reduce((a,r)=>a+(r-meanR)**2,0)/radii.length);
+    const roundness = clamp(1 - (stdR/meanR), 0, 1);
+    const s = current.length? current : (strokes.at(-1) || pts);
+    const dClose = dist(s[0], s[s.length-1]);
+    const close = clamp(1 - (dClose/(0.35*meanR)), 0, 1);
+    const bins = new Array(72).fill(0);
+    pts.forEach(p=>{
+      const a = Math.atan2(p.y-cy, p.x-cx);
+      let deg = (a*180/Math.PI + 360)%360;
+      const idx = Math.floor(deg/5);
+      bins[idx] = 1;
+    });
+    const cover = bins.reduce((a,b)=>a+b,0)/bins.length;
+    const total = (roundness*0.6 + close*0.2 + cover*0.2) * 100;
+    setScore(total);
+  }
+
+  function setScore(v){
+    const pct = clamp(v,0,100);
+    scoreEl.textContent = pct.toFixed(1);
+    if(pct > best){ best = pct; localStorage.setItem('circle_best', String(best)); bestEl.textContent = best.toFixed(1); }
+  }
+
+  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+
+  function fitCircle(pts){
+    let Sx=0,Sy=0,Sxx=0,Syy=0,Sxy=0,Sxz=0,Syz=0, n=pts.length;
+    for(const p of pts){
+      const x=p.x, y=p.y, z=x*x + y*y;
+      Sx+=x; Sy+=y; Sxx+=x*x; Syy+=y*y; Sxy+=x*y; Sxz+=x*z; Syz+=y*z;
+    }
+    const A = [
+      [Sxx, Sxy, Sx],
+      [Sxy, Syy, Sy],
+      [Sx,  Sy,  n ]
+    ];
+    const b = [-Sxz, -Syz, -(Sxx+Syy)];
+    const sol = solve3(A,b);
+    const a = sol[0], b1 = sol[1], c = sol[2];
+    const cx = -a/2, cy = -b1/2;
+    let R = Math.sqrt(Math.max(0, cx*cx + cy*cy - c));
+    if(!isFinite(R) || R===0){
+      const cx2 = Sx/n, cy2 = Sy/n;
+      const rs = pts.map(p=>Math.hypot(p.x-cx2,p.y-cy2));
+      R = rs.reduce((a,r)=>a+r,0)/rs.length;
+      return {cx:cx2, cy:cy2, R};
+    }
+    return {cx, cy, R};
+  }
+
+  function solve3(A,b){
+    const M = [A[0].slice(), A[1].slice(), A[2].slice()];
+    const v = b.slice();
+    for(let i=0;i<3;i++){
+      let max=i; for(let r=i+1;r<3;r++){ if(Math.abs(M[r][i])>Math.abs(M[max][i])) max=r; }
+      if(max!==i){ [M[i],M[max]]=[M[max],M[i]]; [v[i],v[max]]=[v[max],v[i]]; }
+      const piv = M[i][i] || 1e-12;
+      for(let j=i;j<3;j++) M[i][j]/=piv; v[i]/=piv;
+      for(let r=0;r<3;r++) if(r!==i){ const f=M[r][i]; for(let j=i;j<3;j++) M[r][j]-=f*M[i][j]; v[r]-=f*v[i]; }
+    }
+    return v;
+  }
+})();
+</script>
+</body>
+</html>
