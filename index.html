@@ -71,13 +71,13 @@
 
   clearBtn.addEventListener('click', () => {
     strokes = [];
-    current = [];
+    current = null;
     redraw();
     setScore(0);
   });
 
-  let strokes = [];
-  let current = [];
+  let strokes = []; // each stroke: {points: [...], color: string}
+  let current = null; // {points: [...], color: string}
   let best = Number(localStorage.getItem('circle_best') || 0);
   bestEl.textContent = best.toFixed(1);
 
@@ -107,7 +107,7 @@
 
   function start(e){
     e.preventDefault();
-    current = [];
+    current = {points: [], color: penColor};
     drawing = true;
     scheduleScore();
   }
@@ -115,9 +115,9 @@
   function move(e){
     if(!drawing) return;
     const p = getPos(e);
-    const len = current.length;
-    if(len===0 || dist(current[len-1], p) > 1.8) {
-      current.push(p);
+    const pts = current.points;
+    if(pts.length===0 || dist(pts[pts.length-1], p) > 1.8) {
+      pts.push(p);
       redraw();
       scheduleScore();
     }
@@ -126,8 +126,8 @@
   function end(){
     if(!drawing) return;
     drawing = false;
-    if(current.length>8) strokes.push(current);
-    current = [];
+    if(current.points.length>8) strokes.push(current);
+    current = null;
     redraw();
     scheduleScore();
   }
@@ -142,8 +142,8 @@
     ctx.lineCap='round';
     ctx.lineJoin='round';
     ctx.lineWidth = 4;
-    for(const s of strokes){ drawPath(s, penColor); }
-    if(current.length){ drawPath(current, penColor); }
+    for(const s of strokes){ drawPath(s.points, s.color); }
+    if(current && current.points.length){ drawPath(current.points, current.color); }
   }
 
   function drawPath(pts, color){
@@ -155,7 +155,13 @@
     ctx.stroke();
   }
 
-  function flatten(){ return strokes.flat().concat(current); }
+  function flatten(){
+    let all = [];
+    for(const s of strokes) all = all.concat(s.points);
+    if(current) all = all.concat(current.points);
+    return all;
+  }
+
   function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
 
   function scheduleScore(){
@@ -171,7 +177,7 @@
     const meanR = radii.reduce((a,b)=>a+b,0)/radii.length;
     const stdR = Math.sqrt(radii.reduce((a,r)=>a+(r-meanR)**2,0)/radii.length);
     const roundness = clamp(1 - (stdR/meanR), 0, 1);
-    const s = current.length? current : (strokes.at(-1) || pts);
+    const s = current && current.points.length ? current.points : (strokes.at(-1)?.points || pts);
     const dClose = dist(s[0], s[s.length-1]);
     const close = clamp(1 - (dClose/(0.35*meanR)), 0, 1);
     const bins = new Array(72).fill(0);
